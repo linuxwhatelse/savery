@@ -1,0 +1,14 @@
+[Unit]
+Description=savery screensaver
+
+[Service]
+Type=simple
+Environment=DISPLAY=:0
+# I don't want my screens dpms to interfere
+ExecStartPre=/usr/bin/xset -dpms
+# I don't want the X screensaver to interfere
+ExecStartPre=/usr/bin/xset s off
+ExecStart=/usr/bin/savery
+
+[Install]
+WantedBy=default.target
