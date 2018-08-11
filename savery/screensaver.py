@@ -31,7 +31,7 @@ class ScreenSaver(dbus.service.Object):
     ]
     """list: Events that will reset the idle timer and kill the idle action."""
 
-    input_reset_delay = 3
+    input_reset_delay = 1
     """int: When input is detected, only reset ever `input_reset_delay` sec.
         to keep cpu-usage low."""
 
