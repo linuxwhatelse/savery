@@ -16,11 +16,10 @@ from . import utils, const
 
 LOGGER = logging.getLogger(__name__)
 
-DBUS_INTERFACE = 'org.savery.ScreenSaver'
-DBUS_PATH = '/org/savery/ScreenSaver'
-
 
 class ScreenSaver(dbus.service.Object):
+    __instances = {}
+
     idle_event_masks = (xinput.KeyPressMask | xinput.ButtonPressMask
                         | xinput.MotionMask | xinput.RawKeyPressMask
                         | xinput.RawButtonPressMask | xinput.RawMotionMask)
@@ -53,21 +52,29 @@ class ScreenSaver(dbus.service.Object):
 
     __fs_inhibit_cookie = -1
 
+    __monitor = None
     __cmd_timer = None
     __mem = None
 
-    def __init__(self, lock_cmd=None, lock_sec=0, idle_cmd=None, idle_sec=0,
-                 idle_sec_locked=0, win_ignore=None,
-                 inhibit_on_fullscreen=True):
+    def __init__(self, path):
         self.__cmd_timer = {}
         self.__mem = []
 
         # Aquire ScreenSaver name on session-bus
         bus = dbus.SessionBus()
-        self.__mem.append(dbus.service.BusName(DBUS_INTERFACE, bus))
+        self.__mem.append(dbus.service.BusName(const.SS_DBUS_NAME, bus))
 
-        dbus.service.Object.__init__(self, bus, DBUS_PATH)
+        dbus.service.Object.__init__(self, bus, path)
 
+    @classmethod
+    def get(cls, path):
+        if path not in cls.__instances:
+            cls.__instances[path] = cls(path)
+        return cls.__instances[path]
+
+    def configure(self, lock_cmd=None, lock_sec=0, idle_cmd=None, idle_sec=0,
+                  idle_sec_locked=0, win_ignore=None,
+                  inhibit_on_fullscreen=True):
         if lock_cmd:
             self._lock_action = utils.Action.get(lock_cmd)
         self._lock_sec = lock_sec
@@ -80,9 +87,13 @@ class ScreenSaver(dbus.service.Object):
         self._win_ignore = win_ignore
         self._inhibit_on_fullscreen = inhibit_on_fullscreen
 
-        t = threading.Thread(target=self._monitor)
-        t.daemon = True
-        t.start()
+    def start(self):
+        if self.__monitor:
+            raise RuntimeError('Already started!')
+
+        self.__monitor = threading.Thread(target=self._monitor)
+        self.__monitor.daemon = True
+        self.__monitor.start()
 
     @property
     def _idle_sec_current(self):
@@ -239,23 +250,24 @@ class ScreenSaver(dbus.service.Object):
                 self.SetActive(False)
 
     # Freedesktop spec
-    @dbus.service.method(DBUS_INTERFACE, in_signature='ss', out_signature='u')
+    @dbus.service.method(const.SS_DBUS_NAME, in_signature='ss',
+                         out_signature='u')
     def Inhibit(self, application_name, reason_for_inhibit):
         self.__inhibit_count += 1
         self._reset_timer()
         self.SetActive(False)
         return self.__inhibit_count
 
-    @dbus.service.method(DBUS_INTERFACE, in_signature='u')
+    @dbus.service.method(const.SS_DBUS_NAME, in_signature='u')
     def UnInhibit(self, cookie):
         self.__inhibit_count = max(0, self.__inhibit_count - 1)
 
     # Additions
-    @dbus.service.method(DBUS_INTERFACE, out_signature='b')
+    @dbus.service.method(const.SS_DBUS_NAME, out_signature='b')
     def GetInhibit(self):
         return self.__inhibit_count > 0
 
-    @dbus.service.method(DBUS_INTERFACE)
+    @dbus.service.method(const.SS_DBUS_NAME)
     def Lock(self):
         if self.GetInhibit():
             return
@@ -266,24 +278,25 @@ class ScreenSaver(dbus.service.Object):
         self._reset_timer(lock=False)
         self.SetActive(True)
 
-    @dbus.service.method(DBUS_INTERFACE)
+    @dbus.service.method(const.SS_DBUS_NAME)
     def Cycle(self):
         pass
 
-    @dbus.service.method(DBUS_INTERFACE, in_signature='ss', out_signature='u')
+    @dbus.service.method(const.SS_DBUS_NAME, in_signature='ss',
+                         out_signature='u')
     def Throttle(self, application_name, reason_for_throttle):
         return 1
 
-    @dbus.service.method(DBUS_INTERFACE, in_signature='u')
+    @dbus.service.method(const.SS_DBUS_NAME, in_signature='u')
     def UnThrottle(self, cookie):
         pass
 
-    @dbus.service.method(DBUS_INTERFACE)
+    @dbus.service.method(const.SS_DBUS_NAME)
     def SimulateUserActivity(self):
         self._reset_timer()
         self.SetActive(False)
 
-    @dbus.service.method(DBUS_INTERFACE, in_signature='b')
+    @dbus.service.method(const.SS_DBUS_NAME, in_signature='b')
     def SetActive(self, active):
         if self.GetInhibit() and active:
             return
@@ -301,21 +314,21 @@ class ScreenSaver(dbus.service.Object):
                 if self._idle_action.is_running():
                     self._idle_action.terminate()
 
-    @dbus.service.method(DBUS_INTERFACE, out_signature='b')
+    @dbus.service.method(const.SS_DBUS_NAME, out_signature='b')
     def GetActive(self):
         return self.__is_active
 
-    @dbus.service.method(DBUS_INTERFACE, out_signature='u')
+    @dbus.service.method(const.SS_DBUS_NAME, out_signature='u')
     def GetActiveTime(self):
         if not self.__active_since:
             return 0
         return int(time.time() - self.__active_since)
 
-    @dbus.service.method(DBUS_INTERFACE, out_signature='b')
+    @dbus.service.method(const.SS_DBUS_NAME, out_signature='b')
     def GetSessionIdle(self):
         return self.GetSessionIdleTime() > self._idle_sec_current
 
-    @dbus.service.method(DBUS_INTERFACE, out_signature='u')
+    @dbus.service.method(const.SS_DBUS_NAME, out_signature='u')
     def GetSessionIdleTime(self):
         if not self.__idle_since:
             return 0
@@ -334,5 +347,7 @@ def register(config):
     inhibit_on_fullscreen = sconfig.getboolean('inhibit_on_fullscreen')
 
     # Register services
-    ScreenSaver(lock_cmd, lock_sec, idle_cmd, idle_sec, idle_sec_locked,
-                win_ignore, inhibit_on_fullscreen)
+    ss = ScreenSaver.get(const.SS_DBUS_PATH)
+    ss.configure(lock_cmd, lock_sec, idle_cmd, idle_sec, idle_sec_locked,
+                 win_ignore, inhibit_on_fullscreen)
+    ss.start()
