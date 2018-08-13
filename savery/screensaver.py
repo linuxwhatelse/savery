@@ -133,7 +133,9 @@ class ScreenSaver(dbus.service.Object):
                 if ignore and not win:
                     return False
 
-                match = re.match(ignore, win) is not None
+                if re.match(ignore, win) is not None:
+                    match = True
+                    break
 
         return match
 
