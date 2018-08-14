@@ -1,8 +1,8 @@
 import json
+import logging
 import re
 import threading
 import time
-import logging
 
 import dbus
 import dbus.service
@@ -12,7 +12,7 @@ import Xlib.protocol.event
 import Xlib.Xatom
 from Xlib.ext import xinput
 
-from . import utils, const
+from . import const, utils
 
 LOGGER = logging.getLogger(__name__)
 
@@ -106,38 +106,25 @@ class ScreenSaver(dbus.service.Object):
         else:
             return self._idle_sec
 
-    def _is_win_ignore(self, wm_class=None, wm_name=None):
-        """Test if the given window is to be ignored due to it being in
-        `ScreenSaver._win_ignore`_.
+    def _should_ignore(self, ignore_list, wm_class=None, wm_name=None):
+        xstr = lambda s: s or ''
 
-        Args:
-            wm_class (tuple|None): Tuple in the form of `(instance, class)` or
-                None.
-            wm_name (str): The windows name or None."""
-        if not self._win_ignore:
-            return False
-
-        wm_inst, wm_cls = None, None
+        wm_name = xstr(wm_name)
+        wm_inst, wm_cls = ('', '')
         if wm_class:
-            wm_inst, wm_cls = wm_class
+            wm_inst, wm_cls = [xstr(s) for s in wm_class]
 
-        match = True
-        for pair in [('class', wm_cls), ('inst', wm_inst), ('name', wm_name)]:
-            for patterns in self._win_ignore:
-                ignore = patterns.get(pair[0], None)
-                win = pair[1]
-
+        mapping = [('class', wm_cls), ('inst', wm_inst), ('name', wm_name)]
+        for m in mapping:
+            for pattern in ignore_list:
+                ignore = pattern.get(m[0], None)
                 if ignore is None:
                     continue
 
-                if ignore and not win:
-                    return False
+                if re.match(ignore, m[1]) is not None:
+                    return True
 
-                if re.match(ignore, win) is not None:
-                    match = True
-                    break
-
-        return match
+        return False
 
     def _restart_timer(self, sec, func, *args, **kwargs):
         if sec <= 0:
@@ -230,14 +217,15 @@ class ScreenSaver(dbus.service.Object):
                         wm_class = event.window.get_wm_class()
                         wm_name = event.window.get_wm_name()
 
-                        LOGGER.debug('New window: class {}, name {}'.format(
+                        LOGGER.debug('New window: class: {}, name: {}'.format(
                             wm_class, wm_name))
 
-                        reset = not self._is_win_ignore(wm_class, wm_name)
+                        reset = not self._should_ignore(
+                            self._win_ignore, wm_class, wm_name)
 
                         if not reset:
-                            LOGGER.info('Not resetting screensaver because '
-                                        'window is in ignore-list')
+                            LOGGER.debug('Window is in ignore list. '
+                                         'Not resetting ScreenSaver.')
 
                     elif event.type == Xlib.X.PropertyNotify:
                         if self._inhibit_on_fullscreen:
