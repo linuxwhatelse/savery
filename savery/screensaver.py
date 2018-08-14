@@ -42,7 +42,7 @@ class ScreenSaver(dbus.service.Object):
     _idle_sec = None
     _idle_sec_locked = None
 
-    _win_ignore = None
+    _idle_reset_ignore = None
     _inhibit_on_fullscreen = True
 
     __inhibit_count = 0
@@ -73,7 +73,7 @@ class ScreenSaver(dbus.service.Object):
         return cls.__instances[path]
 
     def configure(self, lock_cmd=None, lock_sec=0, idle_cmd=None, idle_sec=0,
-                  idle_sec_locked=0, win_ignore=None,
+                  idle_sec_locked=0, idle_reset_ignore=None,
                   inhibit_on_fullscreen=True):
         if lock_cmd:
             self._lock_action = utils.Action.get(lock_cmd)
@@ -84,7 +84,7 @@ class ScreenSaver(dbus.service.Object):
         self._idle_sec = idle_sec
         self._idle_sec_locked = idle_sec_locked
 
-        self._win_ignore = win_ignore
+        self._idle_reset_ignore = idle_reset_ignore
         self._inhibit_on_fullscreen = inhibit_on_fullscreen
 
     def start(self):
@@ -221,7 +221,7 @@ class ScreenSaver(dbus.service.Object):
                             wm_class, wm_name))
 
                         reset = not self._should_ignore(
-                            self._win_ignore, wm_class, wm_name)
+                            self._idle_reset_ignore, wm_class, wm_name)
 
                         if not reset:
                             LOGGER.debug('Window is in ignore list. '
@@ -333,11 +333,11 @@ def register(config):
     idle_cmd = utils.get_action(config, 'ScreenSaver', 'idle_action')
     idle_sec = sconfig.getint('idle_sec')
     idle_sec_locked = sconfig.getint('idle_sec_locked')
-    win_ignore = json.loads(sconfig['win_ignore'])
+    idle_reset_ignore = json.loads(sconfig['idle_reset_ignore'])
     inhibit_on_fullscreen = sconfig.getboolean('inhibit_on_fullscreen')
 
     # Register services
     ss = ScreenSaver.get(const.SS_DBUS_PATH)
     ss.configure(lock_cmd, lock_sec, idle_cmd, idle_sec, idle_sec_locked,
-                 win_ignore, inhibit_on_fullscreen)
+                 idle_reset_ignore, inhibit_on_fullscreen)
     ss.start()
