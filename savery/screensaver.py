@@ -39,6 +39,7 @@ class ScreenSaver(dbus.service.Object):
     _lock_sec = None
 
     _idle_action = None
+    _idle_reset_action = None
     _idle_sec = None
     _idle_sec_locked = None
 
@@ -72,15 +73,19 @@ class ScreenSaver(dbus.service.Object):
             cls.__instances[path] = cls(path)
         return cls.__instances[path]
 
-    def configure(self, lock_cmd=None, lock_sec=0, idle_cmd=None, idle_sec=0,
-                  idle_sec_locked=0, idle_reset_ignore=None,
-                  inhibit_on_fullscreen=True):
+    def configure(self, lock_cmd=None, lock_sec=0, idle_cmd=None,
+                  idle_reset_cmd=None, idle_sec=0, idle_sec_locked=0,
+                  idle_reset_ignore=None, inhibit_on_fullscreen=True):
         if lock_cmd:
             self._lock_action = utils.Action.get(lock_cmd)
         self._lock_sec = lock_sec
 
         if idle_cmd:
             self._idle_action = utils.Action.get(idle_cmd)
+
+        if idle_reset_cmd:
+            self._idle_reset_action = utils.Action.get(idle_reset_cmd)
+
         self._idle_sec = idle_sec
         self._idle_sec_locked = idle_sec_locked
 
@@ -304,6 +309,9 @@ class ScreenSaver(dbus.service.Object):
                 if self._idle_action.is_running():
                     self._idle_action.terminate()
 
+                if self._idle_reset_action:
+                    self._idle_reset_action.run()
+
     @dbus.service.method(const.SS_DBUS_NAME, out_signature='b')
     def GetActive(self):
         return self.__is_active
@@ -331,6 +339,8 @@ def register(config):
     lock_cmd = utils.get_action(config, 'ScreenSaver', 'lock_action')
     lock_sec = sconfig.getint('lock_sec')
     idle_cmd = utils.get_action(config, 'ScreenSaver', 'idle_action')
+    idle_reset_cmd = utils.get_action(config, 'ScreenSaver',
+                                      'idle_reset_action')
     idle_sec = sconfig.getint('idle_sec')
     idle_sec_locked = sconfig.getint('idle_sec_locked')
     idle_reset_ignore = json.loads(sconfig['idle_reset_ignore'])
@@ -338,6 +348,6 @@ def register(config):
 
     # Register services
     ss = ScreenSaver.get(const.SS_DBUS_PATH)
-    ss.configure(lock_cmd, lock_sec, idle_cmd, idle_sec, idle_sec_locked,
-                 idle_reset_ignore, inhibit_on_fullscreen)
+    ss.configure(lock_cmd, lock_sec, idle_cmd, idle_reset_cmd, idle_sec,
+                 idle_sec_locked, idle_reset_ignore, inhibit_on_fullscreen)
     ss.start()
