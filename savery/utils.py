@@ -8,7 +8,9 @@ LOGGER = logging.getLogger(__name__)
 
 
 def get_action(config, section, key):
-    return config['Actions'][config[section][key]]
+    actions = config['Actions']
+    key = config[section].get(key, '')
+    return actions.get(key, None)
 
 
 def get_config(file_):
