@@ -1,0 +1,76 @@
+#!/usr/bin/env bash
+#
+#   Simple script to interface with the savery ScreenSaver.
+#
+#   Usage:
+#     $ saveryctl -h
+#
+#   Requirements:
+#     dbus
+#
+
+function usage() {
+    printf "usage: $0 [option]\n"
+    printf "Actions:\n"
+    printf "  -l  Lock using the ScreenSaver.\n"
+    printf "  -a  Activate the ScreenSaver.\n"
+    printf "  -i  Inhibit the ScreenSaver.\n"
+    printf "  -u  UnInhibit the ScreenSaver.\n"
+    printf "  -s  Simulate user activity.\n"
+    printf "Informations:\n"
+    printf "  -A  Print whether or not the ScreenSaver is active.\n"
+    printf "  -T  Print for how long the ScreenSaver has been active.\n"
+    printf "  -I  Print whether or not the ScreenSaver is inhibited.\n"
+    printf "  -S  Print whether or not the system is idle.\n"
+    printf "  -N  Print for how long the system has been idle.\n"
+}
+
+function send() {
+    METHOD="$1"
+    PARAMS="${@:2}"
+
+    reply=$(dbus-send \
+        --session \
+        --print-reply \
+        --dest=org.savery.ScreenSaver \
+        /org/savery/ScreenSaver org.savery.ScreenSaver.${METHOD} ${PARAMS})
+
+    echo "$reply" | grep -v "method" | awk '{print $2}'
+}
+
+case "$1" in
+    "-l")
+        send Lock
+        ;;
+    "-a")
+        send SetActive "boolean:true"
+        ;;
+    "-i")
+        send Inhibit "string:$0 string:$0"
+        ;;
+    "-u")
+        send UnInhibit "int32:0"
+        ;;
+    "-s")
+        send SimulateUserActivity
+        ;;
+    "-A")
+        send GetActive
+        ;;
+    "-A")
+        send GetActiveTime
+        ;;
+    "-I")
+        send GetInhibit
+        ;;
+    "-S")
+        send GetSessionIdle
+        ;;
+    "-N")
+        send GetSessionIdleTime
+        ;;
+    *)
+        usage
+        ;;
+esac
+
