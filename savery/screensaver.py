@@ -112,7 +112,8 @@ class ScreenSaver(dbus.service.Object):
             return self._idle_sec
 
     def _should_ignore(self, ignore_list, wm_class=None, wm_name=None):
-        xstr = lambda s: s or ''
+        def xstr(s):
+            return s or ''
 
         wm_name = xstr(wm_name)
         wm_inst, wm_cls = ('', '')
