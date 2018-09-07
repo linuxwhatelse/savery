@@ -46,10 +46,14 @@ class ScreenSaver(dbus.service.Object):
     _idle_reset_ignore = None
     _inhibit_on_fullscreen = True
 
+    _enter_fullscreen_action = None
+    _leave_fullscreen_action = None
+
     __inhibit_count = 0
     __is_active = False
     __active_since = None
     __idle_since = None
+    __is_fullscreen = False
 
     __fs_inhibit_cookie = -1
 
@@ -75,7 +79,8 @@ class ScreenSaver(dbus.service.Object):
 
     def configure(self, lock_cmd=None, lock_sec=0, idle_cmd=None,
                   idle_reset_cmd=None, idle_sec=0, idle_sec_locked=0,
-                  idle_reset_ignore=None, inhibit_on_fullscreen=True):
+                  idle_reset_ignore=None, inhibit_on_fullscreen=True,
+                  enter_fullscreen_cmd=None, leave_fullscreen_cmd=None):
         if lock_cmd:
             self._lock_action = utils.Action.get(lock_cmd)
         self._lock_sec = lock_sec
@@ -91,6 +96,14 @@ class ScreenSaver(dbus.service.Object):
 
         self._idle_reset_ignore = idle_reset_ignore
         self._inhibit_on_fullscreen = inhibit_on_fullscreen
+
+        if enter_fullscreen_cmd:
+            self._enter_fullscreen_action = utils.Action.get(
+                enter_fullscreen_cmd)
+
+        if leave_fullscreen_cmd:
+            self._leave_fullscreen_action = utils.Action.get(
+                leave_fullscreen_cmd)
 
     def start(self):
         if self.__monitor:
@@ -142,7 +155,7 @@ class ScreenSaver(dbus.service.Object):
         self.__cmd_timer[func] = threading.Timer(sec, func, args, kwargs)
         self.__cmd_timer[func].start()
 
-    def _handle_fullscreen(self, display):
+    def _is_active_window_fullscreen(self, display):
         root = display.screen().root
 
         net_active_window = display.intern_atom('_NET_ACTIVE_WINDOW')
@@ -159,19 +172,32 @@ class ScreenSaver(dbus.service.Object):
                                                 Xlib.X.AnyPropertyType)
 
         if not wm_state:
-            return
+            return False
 
         wm_state = wm_state.value
 
-        if (len(wm_state) > 0 and wm_state[0] == net_wm_state_fullscreen):
-            if self.__fs_inhibit_cookie == -1:
+        return len(wm_state) > 0 and wm_state[0] == net_wm_state_fullscreen
+
+    def _handle_fullscreen(self, display):
+        fullscreen = self._is_active_window_fullscreen(display)
+        if self.__is_fullscreen == fullscreen:
+            return
+
+        self.__is_fullscreen = fullscreen
+
+        if fullscreen:
+            if self._enter_fullscreen_action:
+                self._enter_fullscreen_action.run()
+
+            if self._inhibit_on_fullscreen and self.__fs_inhibit_cookie == -1:
                 msg = 'active window entered fullscreen.'
-                LOGGER.info('Inhibiting screensaver becase {}'.format(msg))
-
+                LOGGER.info('Inhibiting screensaver because {}'.format(msg))
                 self.__fs_inhibit_cookie = self.Inhibit(const.APP_NAME, msg)
-
         else:
-            if self.__fs_inhibit_cookie > 0:
+            if self._leave_fullscreen_action:
+                self._leave_fullscreen_action.run()
+
+            if self._inhibit_on_fullscreen and self.__fs_inhibit_cookie > 0:
                 LOGGER.info(
                     'Active window no longer fullscreen, uninhibiting.')
                 self.UnInhibit(self.__fs_inhibit_cookie)
@@ -234,8 +260,7 @@ class ScreenSaver(dbus.service.Object):
                                          'Not resetting ScreenSaver.')
 
                     elif event.type == Xlib.X.PropertyNotify:
-                        if self._inhibit_on_fullscreen:
-                            self._handle_fullscreen(display)
+                        self._handle_fullscreen(display)
 
                 except Xlib.error.XError:
                     continue
@@ -347,8 +372,14 @@ def register(config):
     idle_reset_ignore = json.loads(sconfig['idle_reset_ignore'])
     inhibit_on_fullscreen = sconfig.getboolean('inhibit_on_fullscreen')
 
+    enter_fullscreen_cmd = utils.get_action(config, 'ScreenSaver',
+                                            'enter_fullscreen_action')
+    leave_fullscreen_cmd = utils.get_action(config, 'ScreenSaver',
+                                            'leave_fullscreen_action')
+
     # Register services
     ss = ScreenSaver.get(const.SS_DBUS_PATH)
     ss.configure(lock_cmd, lock_sec, idle_cmd, idle_reset_cmd, idle_sec,
-                 idle_sec_locked, idle_reset_ignore, inhibit_on_fullscreen)
+                 idle_sec_locked, idle_reset_ignore, inhibit_on_fullscreen,
+                 enter_fullscreen_cmd, leave_fullscreen_cmd)
     ss.start()
