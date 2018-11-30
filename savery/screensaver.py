@@ -176,7 +176,7 @@ class ScreenSaver(dbus.service.Object):
 
         wm_state = wm_state.value
 
-        return len(wm_state) > 0 and wm_state[0] == net_wm_state_fullscreen
+        return net_wm_state_fullscreen in wm_state
 
     def _handle_fullscreen(self, display):
         fullscreen = self._is_active_window_fullscreen(display)
