@@ -164,8 +164,11 @@ class ScreenSaver(dbus.service.Object):
             '_NET_WM_STATE_FULLSCREEN')
 
         active_win_id = root.get_full_property(net_active_window,
-                                               Xlib.X.AnyPropertyType).value[0]
+                                               Xlib.X.AnyPropertyType)
+        if not active_win_id:
+            return False
 
+        active_win_id = active_win_id.value[0]
         active_win = display.create_resource_object('window', active_win_id)
 
         wm_state = active_win.get_full_property(net_wm_state,
