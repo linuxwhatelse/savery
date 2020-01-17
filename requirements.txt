@@ -1,3 +1,4 @@
 PyGObject
 dbus-python
 python-xlib
+evdev

@@ -1,6 +1,8 @@
 import json
 import logging
+import os
 import re
+import sys
 import threading
 import time
 
@@ -10,26 +12,22 @@ import Xlib
 import Xlib.display
 import Xlib.protocol.event
 import Xlib.Xatom
-from Xlib.ext import xinput
 
 from . import const, utils
+
+sys.path.insert(
+    0,
+    os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                 'asyncio_overwrite'))
+
+import evdev  # noqa: E402, isort:skip
+from evdev.ecodes import ecodes  # noqa: E402, isort:skip
 
 LOGGER = logging.getLogger(__name__)
 
 
 class ScreenSaver(dbus.service.Object):
     __instances = {}
-
-    idle_event_masks = (xinput.KeyPressMask | xinput.ButtonPressMask
-                        | xinput.MotionMask | xinput.RawKeyPressMask
-                        | xinput.RawButtonPressMask | xinput.RawMotionMask)
-    """int: Mask of xinput events to register for."""
-
-    idle_reset_events = [
-        xinput.KeyPress, xinput.ButtonPress, xinput.Motion, xinput.RawKeyPress,
-        xinput.RawButtonPress, xinput.RawMotion
-    ]
-    """list: Events that will reset the idle timer and kill the idle action."""
 
     input_reset_delay = 1
     """int: When input is detected, only reset ever `input_reset_delay` sec.
@@ -216,6 +214,19 @@ class ScreenSaver(dbus.service.Object):
             self._restart_timer(self._lock_sec, self.Lock)
 
     def _monitor(self):
+        def _reset():
+            LOGGER.debug('Resetting screensaver.')
+            self._reset_timer()
+            self.SetActive(False)
+
+        def _input_monitor(dev):
+            LOGGER.info(f'Monitoring "{dev.name}"')
+            for event in dev.read_loop():
+                if self.GetSessionIdleTime() < self.input_reset_delay:
+                    continue
+                _reset()
+
+        # Xlib for monitoring windows
         display = Xlib.display.Display(None)
         root = display.screen().root
 
@@ -223,55 +234,48 @@ class ScreenSaver(dbus.service.Object):
                          | Xlib.X.SubstructureNotifyMask)
         root.change_attributes(event_mask=win_attr_mask)
 
-        root.xinput_select_events([(xinput.AllDevices, self.idle_event_masks)])
+        # evdev for monitoring input devices
+        devices = []
+        for dev in [evdev.InputDevice(path) for path in evdev.list_devices()]:
+            for k, caps in dev.capabilities(absinfo=False).items():
+                if (ecodes['BTN_TOUCH'] in caps or ecodes['BTN_MOUSE'] in caps
+                        or ecodes['KEY_ENTER'] in caps):
+                    devices.append(dev)
 
-        self._reset_timer()
-        self.SetActive(False)
+        for dev in devices:
+            t = threading.Thread(target=_input_monitor, args=(dev, ))
+            t.daemon = True
+            t.start()
+
+        _reset()
 
         while True:
             event = display.next_event()
 
-            reset = False
+            # Test for new windows
+            try:
+                if event.type == Xlib.X.CreateNotify:
+                    LOGGER.debug('Registering new window')
+                    event.window.change_attributes(event_mask=win_attr_mask)
 
-            # Xinput events
-            if event.type == display.extension_event.GenericEvent:
-                if event.evtype in self.idle_reset_events:
-                    if self.GetSessionIdleTime() < self.input_reset_delay:
-                        continue
+                elif event.type == Xlib.X.MapNotify:
+                    wm_class = event.window.get_wm_class()
+                    wm_name = event.window.get_wm_name()
 
-                    reset = True
+                    LOGGER.debug('New window: class: {}, name: {}'.format(
+                        wm_class, wm_name))
 
-            else:
-                try:
-                    if event.type == Xlib.X.CreateNotify:
-                        LOGGER.debug('Registering new window')
-                        event.window.change_attributes(
-                            event_mask=win_attr_mask)
+                    if self._should_ignore(self._idle_reset_ignore, wm_class,
+                                           wm_name):
+                        LOGGER.debug('Window is in ignore list. '
+                                     'Not resetting ScreenSaver.')
+                    _reset()
 
-                    elif event.type == Xlib.X.MapNotify:
-                        wm_class = event.window.get_wm_class()
-                        wm_name = event.window.get_wm_name()
+                elif event.type == Xlib.X.PropertyNotify:
+                    self._handle_fullscreen(display)
 
-                        LOGGER.debug('New window: class: {}, name: {}'.format(
-                            wm_class, wm_name))
-
-                        reset = not self._should_ignore(
-                            self._idle_reset_ignore, wm_class, wm_name)
-
-                        if not reset:
-                            LOGGER.debug('Window is in ignore list. '
-                                         'Not resetting ScreenSaver.')
-
-                    elif event.type == Xlib.X.PropertyNotify:
-                        self._handle_fullscreen(display)
-
-                except Xlib.error.XError:
-                    continue
-
-            if reset:
-                LOGGER.debug('Resetting screensaver.')
-                self._reset_timer()
-                self.SetActive(False)
+            except Xlib.error.XError:
+                continue
 
     # Freedesktop spec
     @dbus.service.method(const.SS_DBUS_NAME, in_signature='ss',
