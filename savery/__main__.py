@@ -1,5 +1,7 @@
-import logging
 import argparse
+import grp
+import logging
+import os
 import sys
 
 from dbus.mainloop.glib import DBusGMainLoop
@@ -25,6 +27,13 @@ def main():
         default=const.DEFAULT_CONFIG)
 
     args = parser.parse_args()
+
+    if 'input' not in [grp.getgrgid(g).gr_name for g in os.getgroups()]:
+        print(
+            'Your user should be in the "input" group, as '
+            'otherwise monitoring input devices will not work.',
+            file=sys.stderr)
+        sys.exit(1)
 
     config = utils.get_config(args.config)
     if not config:
