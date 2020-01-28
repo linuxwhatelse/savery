@@ -29,7 +29,7 @@ LOGGER = logging.getLogger(__name__)
 class ScreenSaver(dbus.service.Object):
     __instances = {}
 
-    input_reset_delay = 1
+    input_reset_delay = 3
     """int: When input is detected, only reset ever `input_reset_delay` sec.
         to keep cpu-usage low."""
 
