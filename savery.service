@@ -8,7 +8,7 @@ Environment=DISPLAY=:0
 ExecStartPre=/usr/bin/xset -dpms
 # I don't want the X screensaver to interfere
 ExecStartPre=/usr/bin/xset s off
-ExecStart=/usr/bin/savery
+ExecStart=/usr/bin/nice /usr/bin/savery
 
 [Install]
 WantedBy=default.target
