@@ -269,6 +269,7 @@ class ScreenSaver(dbus.service.Object):
                                            wm_name):
                         LOGGER.debug('Window is in ignore list. '
                                      'Not resetting ScreenSaver.')
+                        continue
                     _reset()
 
                 elif event.type == Xlib.X.PropertyNotify:
